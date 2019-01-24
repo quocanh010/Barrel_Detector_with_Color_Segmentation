@@ -14,12 +14,8 @@ class BarrelDetector():
             Initilize your blue barrel detector with the attributes you need
             eg. parameters of your classifier
         '''
-        self.x_train  = None
-        self.x_label  = None
-        self.w        = None
+        self.W        = None
         self.b        = None
-        self.feature_vector("label_matrix.npy")
-
 
     def segment_image(self, img):
         '''
@@ -32,7 +28,15 @@ class BarrelDetector():
             Outputs:
                 mask_img - a binary image with 1 if the pixel in the original image is blue and 0 otherwise
         '''
-        # YOUR CODE HERE
+        r_img = np.zeros([3, img.shape[0] * img.shape[1]])
+        r_img[0, :] = img[:, :, 0].flatten()
+        r_img[1, :] = img[:, :, 1].flatten()
+        r_img[2, :] = img[:, :, 1].flatten()
+        r_img = r_img / 255.
+        scores = np.dot(self.W, r_img) + self.b
+        predicted_class = np.argmax(scores, axis=0)
+        mask_img = predicted_class.reshape(800, 1200)
+
         return mask_img
 
     def get_bounding_box(self, img):
@@ -52,67 +56,129 @@ class BarrelDetector():
         # YOUR CODE HERE
         return boxes
 
-    def softmax(self):
+    def softmax(self, a):
         '''
             Softmax function that will return the probability of the input in
             range of [0, 1]
         '''
         return np.exp(a - a.max(axis=0)) / np.exp(a - a.max(axis=0)).sum(axis=0)
 
-    def label2onehot(lbl):
+    def label2onehot(self, lbl):
         '''
             Convert lbl vector to a one hot code
             Input: Label vector with first axis is number of samples
             Output: One-hot code vector associate with the each label
         '''
-        d = np.zeros((lbl.size, lbl.max() + 1))
-        d[np.arange(0, lbl.size), lbl] = 1
-        return d
+        d = np.zeros((lbl.astype(np.int).max() + 1, lbl.astype(np.int).size))
+        d[lbl.astype(np.int), np.arange(0, lbl.astype(np.int).size)] = 1
+        return d.astype(int)
 
-    def onehot2label(d):
+    def onehot2label(self, d):
         '''
             Convert onehot vector to an associate label
         '''
-        lbl = d.argmax(axis=1)
+        lbl = d.argmax(axis=0)
         return lbl
 
     def feature_vector(self, label_m_name):
         '''
             Convert training image to feature vector with label
         '''
-        z = np.zeros([46 * 800 * 1200, 3])
-        z[:, 0] = np.load(label_m_name).reshape([46 * 800 * 1200])
-        z[:, 1] = np.load(label_m_name).reshape([46 * 800 * 1200])
-        z[:, 2] = np.load(label_m_name).reshape([46 * 800 * 1200])
-        self.x_label = z.flatten() / 255.
+        k = np.load(label_m_name)
+        #x_label = k[:, :, 0:33].reshape(1, 33* 800 * 1200)
+        # x_test_label =  k[:, :, 33:46].reshape(1, (46 - 33) * 800 * 1200)
+        x_label = np.zeros([1, 33 * 800 * 1200])
+
         folder = "trainset"
-        sample = np.zeros([46 * 800 * 1200, 3])
-        for i in range(1, 47):
+        sample_train = np.zeros([3, 33 * 800 * 1200])
+        #sample_test  = np.zeros([3, 13 * 800 * 1200])
+        for i in range(1, 46):
+            if (i <= 33):
+                x_label[0, (i-1) * 800 * 1200 : i * 800 * 1200] = k[:, :, i-1].flatten()
+                img = cv2.imread(os.path.join(folder, str(i) + ".png"))
+                sample_train[0:, (i - 1) * 800 * 1200: i * 800 * 1200] = img[:, :, 0].flatten()
+                sample_train[1:, (i - 1) * 800 * 1200: i * 800 * 1200] = img[:, :, 1].flatten()
+                sample_train[2:, (i - 1) * 800 * 1200: i * 800 * 1200] = img[:, :, 2].flatten()
 
-            sample[(i-1) *  800 * 1200 : i * 800 * 1200, :] = np.reshape(cv2.imread(os.path.join(folder, str(i) + ".png")), (800 * 1200, 3))
 
-        self.x_train = sample.flatten() / 255.
-        print (str(self.x_train.shape) + str (self.x_label.shape))
+
+
+                #sample_train[:, (i-1) *  800 * 1200 : i * 800 * 1200] = np.reshape(cv2.imread(os.path.join(folder, str(i) + ".png")), (3, 800 * 1200))
+            # else:
+            #     sample_test[:, (i - 1) * 800 * 1200: i * 800 * 1200] = np.reshape(cv2.imread(os.path.join(folder, str(i) + ".png")), (3, 800 * 1200))
+
+        x_train = sample_train / 255.
+        # x_test  = sample_test / 255.
+        # print (str(x_train.shape) + str(x_label.shape))
+        return x_train, x_label
 
     def initilize_parameters(self, dim):
-        self.w = np.zeros((dim, 1))
-        self.b = 0
+        # Xavier initialization
+        self.W = np.random.randn(3, 3) / np.sqrt(3. + 1)
+        self.b = np.zeros([3, 1])
 
-    def propagate(self):
-
-        m = self.x_train.shape[0]
-        A = softmax(np.dot(self.w.T,self.x_train) + b)
-        cost =
+    def propagate(self, x_train, x_label):
 
 
-        
+        m = x_train.shape[1]
+        # Forward
+        reg = 1e-3
+        A = self.softmax(np.dot(self.W, x_train) + self.b)
+        loss = np.sum(-np.log(A[x_label, range(m)])) / m
+        reg_loss = 0.5 * reg * np.sum(self.W * self.W)
+        total_loss = reg_loss + loss
 
+        # Backward
+        dscores = A
+        dscores[x_label, range(m)] -= 1
+        dscores /= m
+
+        #Compute gradient
+        dW = np.dot(x_train, dscores.T)
+        db = np.sum(dscores, axis=1, keepdims=True)
+
+        dW += reg * self.W
+        grads = {"dW": dW, "db": db}
+        return grads, total_loss
+
+    def optimize(self, x_train, x_label, n_iter = 100, alpha = 0.2):
+        '''
+        :param n_iter: number of iteration
+        :param alpha: learning rate
+        :param print_cost: weather to print cost or not
+        :return:
+        :grads: dW, db
+        :costs: total cost
+        '''
+        costs = []
+        for i in range(n_iter):
+            grads, cost = self.propagate(x_train = x_train, x_label = x_label)
+            dW = grads['dW']
+            db = grads['db']
+
+            #Update
+            self.W = self.W - alpha * dW
+            self.b = self.b - alpha * db
+            # Record the costs
+            if i % 10 == 0:
+                costs.append(cost)
+                # Print the cost every 100 training iterations
+            if i % 10 == 0:
+                print("Cost after iteration %i: %f" % (i, cost))
+
+
+        return  costs
 
 
 if __name__ == '__main__':
     folder = "trainset"
     my_detector = BarrelDetector()
+    x_train, x_label = my_detector.feature_vector('label_matrix.npy')
+    one_hot_lable = my_detector.label2onehot(x_label)
+    my_detector.initilize_parameters(x_train.shape[0])
+    my_detector.optimize(x_train = x_train, x_label = one_hot_lable)
     a = 1
+    folder = "trainset"
     # for filename in os.listdir(folder):
     #   # read one test image
     #   img = cv2.imread(os.path.join(folder, filename))
@@ -120,10 +186,12 @@ if __name__ == '__main__':
     #   cv2.waitKey(0)
     #   cv2.destroyAllWindows()
 
-
+    img = cv2.imread(os.path.join(folder, '1.png'))
     # Display results:
     # (1) Segmented images
-    #    mask_img = my_detector.segment_image(img)
+    mask_img = my_detector.segment_image(img)
+    mask_img[mask_img == 1] = 255
+    cv2.imshow('image', mask_img.astype(np.uint8))
     # (2) Barrel bounding box
     #    boxes = my_detector.get_bounding_box(img)
     # The autograder checks your answers to the functions segment_image() and get_bounding_box()
